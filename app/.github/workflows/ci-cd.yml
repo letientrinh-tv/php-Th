@@ -27,7 +27,6 @@ jobs:
       - name: Run containers (migrate + test)
         run: docker compose up --abort-on-container-exit --exit-code-from app
 
-
       - name: Cleanup
         if: always()
         run: docker compose down -v
