@@ -1,67 +1,32 @@
-name: CI/CD for Dockerized Laravel
+name: Laravel Docker CI
 
 on:
   push:
     branches:
-      - main  # Chạy khi có push lên branch main
+      - main
+      - develop
   pull_request:
-    branches:
-      - main  # Chạy khi tạo Pull Request
 
 jobs:
-  build-and-test:
+  laravel-tests:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Build Docker Image
-      run: docker build -t laravel-app .
+      - name: Set up Docker Compose
+        run: docker compose version
 
-    - name: Run Laravel Tests (Requires DB setup)
-      # Để chạy kiểm tra, bạn cần khởi tạo các dịch vụ (database) bằng docker-compose 
-      # và chạy phpunit bên trong container ứng dụng.
-      run: |
-        docker-compose up -d --build
-        docker-compose exec -T app cp .env.example .env 
-        docker-compose exec -T app composer install
-        docker-compose exec -T app php artisan key:generate
-        # Chạy kiểm tra sau khi services sẵn sàng
-        docker-compose exec -T app php artisan test
+      - name: Copy .env
+        run: cp .env.example .env
 
-  deploy-to-server:
-    needs: build-and-test # Chỉ chạy khi build và test thành công
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' # Chỉ deploy từ branch main
+      - name: Build containers
+        run: docker compose build
 
-    steps:
-    - name: Set up SSH
-      uses: webfactory/ssh-agent@v0.8.0
-      with:
-        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-        
-    - name: Deploy via SSH
-      env:
-        SERVER_USER: user_cua_ban
-        SERVER_HOST: dia_chi_ip_server
-        PROJECT_PATH: /du_an/laravel-app
-      run: |
-        ssh -o StrictHostKeyChecking=no ${SERVER_USER}@${SERVER_HOST} << 'EOF'
-          # Vào thư mục dự án
-          cd $PROJECT_PATH
-          
-          # Cập nhật code mới nhất
-          git pull origin main
-          
-          # Chạy docker-compose (tải Image mới nhất và khởi động lại)
-          docker-compose pull
-          docker-compose up -d --build --force-recreate
-          
-          # Chạy migration và dọn dẹp cache
-          docker-compose exec -T app php artisan migrate --force
-          docker-compose exec -T app php artisan config:clear
-          docker-compose exec -T app php artisan cache:clear
-          
-          # Có thể cần chạy thêm: docker-compose exec -T app php artisan queue:restart
-        EOF
+      - name: Run containers (migrate + test)
+        run: docker compose up --abort-on-container-exit --exit-code-from app
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
